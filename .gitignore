@@ -1,0 +1,17 @@
+# Secrets / local config
+.env
+.env.*
+!.env.example
+
+# Never commit real identity documents. Only synthetic samples live in data/samples/.
+.local_samples/
+*.local.png
+*.local.jpg
+*.local.jpeg
+
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+venv/
+artifacts/

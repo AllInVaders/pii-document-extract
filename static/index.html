@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Secure ID Extract · Multimodal KYC with PII protection</title>
+  <meta name="description" content="Extract identity document entities with Gemini while keeping customer PII protected by Model Armor, Cloud DLP and Cloud KMS.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&family=Roboto+Mono:wght@400;500&display=swap">
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true"></span>
+      <h1>Secure ID Extract</h1>
+    </div>
+    <nav class="tabs" role="tablist" aria-label="Views">
+      <button role="tab" id="tab-extract" class="tab active" aria-selected="true" data-view="extract">Extract</button>
+      <button role="tab" id="tab-posture" class="tab" aria-selected="false" data-view="posture">Security posture</button>
+      <button role="tab" id="tab-audit" class="tab" aria-selected="false" data-view="audit">Audit log</button>
+    </nav>
+    <div class="model-chip" id="model-chip">gemini-3.8-flash</div>
+  </header>
+
+  <main>
+    <!-- Extract view -->
+    <section class="view active" id="view-extract" aria-labelledby="tab-extract">
+      <div class="pane input-pane">
+        <h2 class="pane-title">Document</h2>
+        <label class="drop" id="drop" for="file-input">
+          <input type="file" id="file-input" accept="image/png,image/jpeg,image/webp" hidden>
+          <span class="drop-title">Drop an ID image or click to browse</span>
+          <span class="drop-sub">PNG, JPG or WEBP, up to 10 MB. Processed in memory, never stored.</span>
+        </label>
+        <div class="samples" id="samples" aria-label="Synthetic samples"></div>
+
+        <div class="original-card" id="original-card" hidden>
+          <div class="row-between">
+            <span class="label">Original (this browser only)</span>
+            <button class="text-btn" id="toggle-original" aria-pressed="false">Show</button>
+          </div>
+          <div class="img-frame"><img id="original-img" class="blurred" alt="Uploaded document, blurred"></div>
+        </div>
+
+        <button class="primary-btn" id="run-btn" disabled>Extract securely</button>
+      </div>
+
+      <div class="pane result-pane">
+        <div class="stages-card">
+          <div class="row-between">
+            <h2 class="pane-title">Pipeline</h2>
+            <span class="mono muted" id="total-ms"></span>
+          </div>
+          <ol class="stages" id="stages">
+            <li class="stage idle"><span class="dot"></span><span class="stage-name">Waiting for a document</span></li>
+          </ol>
+          <div class="banner" id="banner" hidden></div>
+        </div>
+
+        <div class="consumer-card" id="consumer-card" hidden>
+          <div class="seg" role="tablist" aria-label="Consumer">
+            <button class="seg-btn active" data-role="agent" id="role-agent">AI agent</button>
+            <button class="seg-btn" data-role="banker" id="role-banker">Banker</button>
+            <button class="seg-btn" data-role="vault" id="role-vault">Core KYC vault</button>
+          </div>
+
+          <div class="role-panel active" id="panel-agent">
+            <p class="hint">Downstream agents get tokens and yes/no claims. No names, numbers or birth dates.</p>
+            <div class="grid-2">
+              <div>
+                <h3>KYC claims</h3>
+                <dl class="kv" id="claims"></dl>
+              </div>
+              <div>
+                <h3>Document</h3>
+                <dl class="kv" id="agent-doc"></dl>
+              </div>
+            </div>
+            <h3>Tokens (Cloud DLP + KMS, AES-SIV)</h3>
+            <dl class="kv tokens" id="tokens"></dl>
+            <details class="raw">
+              <summary>Exact payload sent to the agent</summary>
+              <pre id="agent-json" tabindex="0" role="region" aria-label="Agent payload"></pre>
+            </details>
+          </div>
+
+          <div class="role-panel" id="panel-banker">
+            <p class="hint">Front office sees masked values and a preview with faces, signatures and identifiers blacked out.</p>
+            <div class="grid-2">
+              <div>
+                <h3>Masked fields</h3>
+                <dl class="kv" id="masked"></dl>
+                <h3>Attributes</h3>
+                <dl class="kv" id="attributes"></dl>
+              </div>
+              <div>
+                <h3>Redacted preview</h3>
+                <div class="img-frame"><img id="redacted-img" alt="Redacted document preview"></div>
+                <p class="muted small" id="redacted-note"></p>
+              </div>
+            </div>
+          </div>
+
+          <div class="role-panel" id="panel-vault">
+            <p class="hint">Only the system of record can turn tokens back into values, through Cloud DLP with the KMS key. Requires the vault key.</p>
+            <form class="vault-form" id="vault-form" autocomplete="off">
+              <label for="vault-key" class="label">Vault key</label>
+              <input type="password" id="vault-key" placeholder="VAULT_API_KEY" autocomplete="off">
+              <button type="submit" class="primary-btn" id="vault-btn">Re-identify</button>
+            </form>
+            <dl class="kv" id="vault-values"></dl>
+            <p class="muted small" id="vault-note"></p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Posture view -->
+    <section class="view" id="view-posture" aria-labelledby="tab-posture">
+      <div class="pane wide">
+        <div class="row-between">
+          <h2 class="pane-title">Security posture</h2>
+          <button class="text-btn" id="refresh-posture">Refresh</button>
+        </div>
+        <p class="hint">Live, read-only checks against the GCP project. Nothing is modified.</p>
+        <ul class="checks" id="checks"></ul>
+        <h3>Where customer data goes</h3>
+        <table class="flow">
+          <thead><tr><th>Step</th><th>Sees cleartext PII</th><th>Notes</th></tr></thead>
+          <tbody>
+            <tr><td>Browser</td><td>Yes</td><td>The customer's own device. Original is blurred by default.</td></tr>
+            <tr><td>This service (memory)</td><td>Yes, transient</td><td>Re-encoded without EXIF. Never written to disk, logs or storage.</td></tr>
+            <tr><td>Model Armor</td><td>Image, transient</td><td>Stateless screening, content not stored unless logging is enabled.</td></tr>
+            <tr><td>Gemini (Vertex AI)</td><td>Image, transient</td><td>Not used for training. Disable caching and use a regional endpoint for zero data retention.</td></tr>
+            <tr><td>Cloud DLP + KMS</td><td>Values, transient</td><td>Encrypts with a KMS-wrapped key. Stateless.</td></tr>
+            <tr><td>AI agents, logs, events</td><td>No</td><td>Tokens, masked values and yes/no claims only.</td></tr>
+            <tr><td>Core KYC vault</td><td>Yes, on request</td><td>Re-identification gated by vault key and KMS IAM.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Audit view -->
+    <section class="view" id="view-audit" aria-labelledby="tab-audit">
+      <div class="pane wide">
+        <div class="row-between">
+          <h2 class="pane-title">Audit log</h2>
+          <button class="text-btn" id="refresh-audit">Refresh</button>
+        </div>
+        <p class="hint">Hashes, verdicts and timings only. No field values are recorded.</p>
+        <div class="table-wrap" tabindex="0" role="region" aria-label="Audit events">
+          <table class="audit">
+            <thead><tr><th>Time (UTC)</th><th>Request</th><th>Outcome</th><th>Image SHA-256</th><th>Stages</th><th class="num">ms</th></tr></thead>
+            <tbody id="audit-rows"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script type="module" src="/static/app.js"></script>
+</body>
+</html>
