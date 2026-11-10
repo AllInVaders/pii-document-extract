@@ -3,21 +3,34 @@
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 
 
+def _parse_env_line(line: str) -> tuple[str, str] | None:
+    """KEY=VALUE with optional quotes; ' #' starts an inline comment in unquoted values."""
+    line = line.strip()
+    if not line or line.startswith("#") or "=" not in line:
+        return None
+    key, value = line.split("=", 1)
+    value = value.strip()
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+        value = value[1:-1]
+    else:
+        value = re.split(r"(?:^|\s)#", value, maxsplit=1)[0].strip()
+    return key.strip(), value
+
+
 def _load_env_file(path: Path) -> None:
     if not path.exists():
         return
     for line in path.read_text().splitlines():
-        line = line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, value = line.split("=", 1)
-        os.environ.setdefault(key.strip(), value.strip())
+        parsed = _parse_env_line(line)
+        if parsed:
+            os.environ.setdefault(*parsed)
 
 
 _load_env_file(ROOT / ".env.local")
